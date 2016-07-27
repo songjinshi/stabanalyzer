@@ -167,13 +167,13 @@ public class Process {
                 if (!ts.isUnBlocked) {
                     boolean isMatchSample = false;
 
-                    ArrayList<ThreadStack> stackList = Parser.getSampleThreadStack(name, ts.name);
+/*                    ArrayList<ThreadStack> stackList = Parser.getSampleThreadStack(name, ts.name);
                     for (ThreadStack sampleTs:stackList) {
                         if (sampleTs.equals(ts)) {
                             isMatchSample = true;
                             break;
                         }
-                    }
+                    }*/
 
                     if (!isMatchSample) {
                         if (!ts.getBinderFunc().isEmpty()) {
@@ -200,18 +200,22 @@ public class Process {
     public ArrayList<Triage.AnalysisComment> getStackInfo(ThreadStack ts) {
         ArrayList<Triage.AnalysisComment> triageComments = new ArrayList<>();
         Triage.AnalysisComment comment = new Triage.AnalysisComment();
+        int lockedThreadID = ts.getLockedByThreadId();
+
         comment.result = "Thread *"+ts.name+"* (Tid = "+ts.tid+")'s stack is below:";
         comment.referenceLog = ts.logData;
         triageComments.add(comment);
-        int lockedThreadID = ts.getLockedByThreadId();
+
         comment = new Triage.AnalysisComment();
         while (lockedThreadID != ThreadStack.INVALIDTHREADID){
+            comment = new Triage.AnalysisComment();
             ThreadStack lts = getThreadByID(lockedThreadID);
-            comment.result = "Thread *"+ts.name+"* (Tid = "+ts.tid+")is locked by thread *"+lts.name +" (Tid:"+ ts.tid+")\n";
+            comment.result = "Thread *"+ts.name+"* (Tid = "+ts.tid+")is locked by thread *"+lts.name +" (Tid:"+ lts.tid+")\n";
             comment.result += "Thread *"+lts.name+"* (Tid = "+lts.tid+")'s stack is below:";
-            comment.referenceLog =  ts.logData;
+            comment.referenceLog =  lts.logData;
             triageComments.add(comment);
             ts = lts;
+            lockedThreadID = ts.getLockedByThreadId();
         }
         if (ts.isUnBlocked) {
             comment.result = "Thread *"+ts.name+"* is not blocked in the trace file.";
