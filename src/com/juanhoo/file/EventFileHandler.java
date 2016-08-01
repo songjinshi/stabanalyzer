@@ -2,6 +2,7 @@ package com.juanhoo.file;
 
 import com.juanhoo.Controller.ANR;
 import com.juanhoo.Controller.Crash;
+import com.juanhoo.Controller.Issue;
 import com.juanhoo.Controller.Parser;
 
 import java.io.BufferedReader;
@@ -27,13 +28,13 @@ public class EventFileHandler extends FileHandler {
             while ((line = br.readLine()) != null) {
                 showProgress();
                 if (line.contains("am_anr")) {
-                    ANR anr = new ANR(line);
-                    parser.addANR(anr);
+                    Issue anr = new ANR(Issue.IssueType.ANR, line);
+                    parser.addIssue(anr);
                     continue;
                 }
                 if (line.contains("am_crash")) {
-                    Crash crash = new Crash(line);
-                    parser.addNewCrash(crash);
+                    Issue crash = new Crash(Issue.IssueType.FORCECLOSE, line);
+                    parser.addIssue(crash);
                     continue;
                 }
 

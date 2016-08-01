@@ -4,6 +4,7 @@ import com.juanhoo.Controller.CrashStack;
 import com.juanhoo.Controller.Parser;
 import com.juanhoo.Controller.Tombstone;
 
+import javax.sound.midi.MidiDevice;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -49,7 +50,7 @@ public class ReportInfoHandler extends FileHandler{
     Parser.DeviceInfo deviceInfo = new Parser.DeviceInfo();
 
 
-    public enum InfoInd { EMAIL, COREID, HWVER,BUILDID, TYPE, MODEL,ISSUESUMMARY,SWVER,BUILDFINGERPRINT, BPVERSION};
+    public enum InfoInd { EMAIL, COREID, HWVER,BUILDID, TYPE, MODEL,BOARD,ISSUESUMMARY,SWVER,BUILDFINGERPRINT, BPVERSION};
     HashMap<String,Enum<?>> infoMap;
 
 
@@ -61,6 +62,7 @@ public class ReportInfoHandler extends FileHandler{
         infoMap.put("BUILDID", InfoInd.BUILDID);
         infoMap.put("TYPE", InfoInd.TYPE);
         infoMap.put("MODEL", InfoInd.MODEL);
+        infoMap.put("BOARD", InfoInd.BOARD);
         infoMap.put("summary", InfoInd.ISSUESUMMARY);
         infoMap.put("softwareVersion", InfoInd.SWVER);
         infoMap.put("BUILDFINGERPRINT", InfoInd.BUILDFINGERPRINT);
@@ -93,6 +95,9 @@ public class ReportInfoHandler extends FileHandler{
                 break;
             case SWVER:
                 deviceInfo.swVer = data;
+                break;
+            case BOARD:
+                deviceInfo.board = data;
                 break;
             case BPVERSION:
                 deviceInfo.bpVer = data;

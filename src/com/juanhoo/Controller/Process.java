@@ -210,15 +210,15 @@ public class Process {
         while (lockedThreadID != ThreadStack.INVALIDTHREADID){
             comment = new Triage.AnalysisComment();
             ThreadStack lts = getThreadByID(lockedThreadID);
-            comment.result = "Thread *"+ts.name+"* (Tid = "+ts.tid+")is locked by thread *"+lts.name +" (Tid:"+ lts.tid+")\n";
-            comment.result += "Thread *"+lts.name+"* (Tid = "+lts.tid+")'s stack is below:";
+            comment.result = "Thread "+Triage.highlight(ts.name)+" (Tid = "+ts.tid+") is locked by thread "+Triage.highlight(lts.name) +" (Tid:"+ lts.tid+")\n";
+            comment.result += "Thread "+Triage.highlight(lts.name)+" (Tid = "+lts.tid+")'s stack is below:";
             comment.referenceLog =  lts.logData;
             triageComments.add(comment);
             ts = lts;
             lockedThreadID = ts.getLockedByThreadId();
         }
         if (ts.isUnBlocked) {
-            comment.result = "Thread *"+ts.name+"* is not blocked in the trace file.";
+            comment.result = "Thread "+Triage.highlight(ts.name)+" is not blocked in the trace file.";
             triageComments.add(comment);
         }
 
@@ -253,7 +253,7 @@ public class Process {
                         comment = new Triage.AnalysisComment();
                         ThreadStack tsBlocked = threadStackMapByTID.get(tid);
                         ThreadStack tsHold = threadStackMapByTID.get(tsBlocked.getLockedByThreadId());
-                        comment.result = "Threads "+tsBlocked.name +" (TID = "+ tid + ") waiting for lock held by "+ tsHold.name + " (TID = "+tsHold.tid+")";
+                        comment.result = "Threads "+Triage.highlight(tsBlocked.name) +" (TID = "+ tid + ") waiting for lock held by "+ Triage.highlight(tsHold.name) + " (TID = "+tsHold.tid+")";
                         comment.referenceLog = tsBlocked.getThreadStack() ;
                         deadLockDetail.add(comment);
                     }
@@ -305,5 +305,7 @@ public class Process {
         }
         return tsList;
     }
+
+
 
 }

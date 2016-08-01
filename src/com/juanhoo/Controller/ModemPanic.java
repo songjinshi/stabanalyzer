@@ -11,12 +11,12 @@ import java.util.regex.Pattern;
 /**
  * Created by Yi He on 7/12/2016.
  */
-public class ModemPanic {
-    public Date time;
-    String logData = "";
-    String subtype;
-    String errmsg;
-    String reason = " ";
+public class ModemPanic extends Issue{
+
+    public ModemPanic(IssueType type, String line) {
+       issueType = type;
+        pName = "";
+    }
 
     public void addLine(String line) {
         String subtypePattern = "^([\\d\\-]{1,})\\s+([\\d\\:\\.]+)\\s+(\\d{1,})\\s+(\\d{1,})\\s+(\\w{1})\\s+SSR\\s+:\\s+subtype is\\s(.*)";
@@ -25,7 +25,7 @@ public class ModemPanic {
         Matcher match = Pattern.compile(subtypePattern).matcher(line);
         if (match.find()) {
 
-            subtype = match.group(6);
+            String subtype = match.group(6);
             reason += "\nSubtype : "+subtype +"\n";
 
             String crashTime = "2016-" + match.group(1)+" "+match.group(2);
@@ -39,7 +39,7 @@ public class ModemPanic {
 
         match = Pattern.compile(errmsgPattern).matcher(line);
         if (match.find()) {
-            errmsg = match.group(6);
+            String errmsg = match.group(6);
             reason += "Error Message : "+errmsg +"\n";
         }
         logData += line +"\n";

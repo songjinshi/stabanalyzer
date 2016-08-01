@@ -1,6 +1,7 @@
 package com.juanhoo.file;
 
 import com.juanhoo.Controller.CrashStack;
+import com.juanhoo.Controller.Issue;
 import com.juanhoo.Controller.Parser;
 import com.juanhoo.Controller.Tombstone;
 
@@ -38,8 +39,8 @@ public class EntryFileHandler extends FileHandler {
                     //Parse TOMBSTONE
                     if (line.contains(TOMBSTONESTART) && tombstone == null) {
                             //Add tombstone
-                        tombstone = new Tombstone();
-                        parser.addTombstone(tombstone);
+                        tombstone = new Tombstone(Issue.IssueType.TOMBSTONE, line);
+                        parser.addIssue(tombstone);
 
                     }
                     if (tombstone != null && line.contains(BACKTRACEEND)) {

@@ -12,19 +12,11 @@ import java.util.regex.Pattern;
 /**
  * Created by JH on 2016/7/6.
  */
-public class Tombstone {
-    public int pid;
-    public int tid;
-    public String pName;
-    public String tName;
-    public Date time = null;
-    public String logData = "";
-    public String reason;
-    public String buildFingerPrint= "";
+public class Tombstone extends Issue{
 
-//Tombstone in crash.txt, there is DEBUG AND TIME PREFIX, BUT IN ENTRY.TXT OR DROPBOX.TXT,NO DEBUG AND TIME PREFIX
-    public void AddLine(String line) {
 
+    public Tombstone(IssueType type, String line) {
+        issueType = type;
         if (time == null) {
             String pattern = "^(\\d{1,2})-(\\d{1,2})\\s+(\\d{1,2}):(\\d{1,2}):(\\d{1,2}).(\\d{1,3})\\s+(\\d{1,})\\s+(\\d{1,})\\s+\\w{1}\\s+(.*)";
             Matcher match = Pattern.compile(pattern).matcher(line);
@@ -38,8 +30,10 @@ public class Tombstone {
                 }
             }
         }
+    }
 
-
+    //Tombstone in crash.txt, there is DEBUG AND TIME PREFIX, BUT IN ENTRY.TXT OR DROPBOX.TXT,NO DEBUG AND TIME PREFIX
+    public void AddLine(String line) {
         String pattern = "(.*)pid:\\s+(\\d+),\\s+tid:\\s+(\\d+),\\s+name:\\s+(.*)\\s+>>>\\s+(.*?)\\s+<<<";
         Matcher match = Pattern.compile(pattern).matcher(line);
         if (match.find()) {
@@ -74,11 +68,6 @@ public class Tombstone {
         else return false;
     }
 
-    @Override
-    public boolean equals(Object obj) {
-
-        return false;
-    }
 
     @Override
     public String toString() {

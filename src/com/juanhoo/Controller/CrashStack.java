@@ -1,5 +1,7 @@
 package com.juanhoo.Controller;
 
+import com.juanhoo.Utils.Triage;
+
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -20,6 +22,9 @@ public class CrashStack {
     public Date time;
     public String logData = "";
     public ArrayList<String> funcStack;
+    private boolean findKeyStarted = false;
+    private String previousLine = "";
+    public String keyWord = Triage.DEFAULT;
 
     //03-11 10:08:07.479 11063 11063 E AndroidRuntime: process: com.motorola.iqdataupload, pid: 11063
     public void addLine(String line) {
@@ -44,12 +49,31 @@ public class CrashStack {
             name = match.group(6);
             return;
         }
+
+
         match = Pattern.compile(exceptionDetailPattern).matcher(line);
         if (match.find()) {
             exception = match.group(6)+"Exception";
             reason = match.group(7);
         }
+
+
+        if (line.contains("at "+name)) {
+            findKeyStarted = true;
+        } else { //Key end here
+            if (findKeyStarted) {
+                //This previous item is top function started from the package. For example MobileNetworkSettings in below item
+                //06-14 19:21:37.365 3048 3048 E AndroidRuntime: at com.android.phone.MobileNetworkSettings.onCreate(MobileNetworkSettings.java:604)
+                int ind = previousLine.indexOf("at "+name) + name.length() + 4;
+                int nextDot = previousLine.indexOf('.', ind);
+                keyWord = previousLine.substring(ind, nextDot);
+                findKeyStarted = false; //Finished the search
+            }
+        }
+        previousLine = line;
     }
+
+
 
     @Override
     public String toString() {

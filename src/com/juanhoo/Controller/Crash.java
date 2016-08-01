@@ -11,17 +11,11 @@ import java.util.regex.Pattern;
 /**
  * Created by JH on 2016/7/6.
  */
-public class Crash {
-    public int pid;
-    public int uid;
-    public String name;
-    public Date time;
-    public String reason;
-    public String logData;
-    public int dupInd = -1;
+public class Crash extends Issue{
 //03-11 06:00:08.806  2371  2427 I am_anr  : [0,24898,com.lifx.lifx,948485700,Broadcast of Intent { act=android.net.wifi.STATE_CHANGE flg=0x4000010 cmp=com.lifx.lifx/com.lifx.app.wear.WifiReceiver (has extras) }]
 
-    public Crash(String line) {
+    public Crash(IssueType type, String line) {
+        issueType = type;
         String patternANR = "^(\\d{1,2})-(\\d{1,2})\\s+(\\d{1,2}):(\\d{1,2}):(\\d{1,2}).(\\d{1,3})\\s+(\\d{1,})\\s+(\\d{1,})\\s+\\w{1}\\s+am_crash:\\s+\\[(\\d{1,}),(\\d{1,}),(.+),([-\\d]{1,}),(.+)\\]$";
 
         Matcher match = Pattern.compile(patternANR).matcher(line);
@@ -38,7 +32,7 @@ public class Crash {
             }
             pid = Integer.parseInt(match.group(9));
             uid = Integer.parseInt(match.group(10));
-            name = match.group(11);
+            pName = match.group(11);
             reason = match.group(13);
             logData = line;
         } else {

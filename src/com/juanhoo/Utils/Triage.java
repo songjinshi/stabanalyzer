@@ -1,7 +1,10 @@
 package com.juanhoo.Utils;
 
+import com.juanhoo.Controller.Parser;
+
 import java.io.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Created by Yi He on 7/10/2016.
@@ -11,9 +14,64 @@ public class Triage {
     private String comments = "";
     private String tagAnalysis = "*Initial Analysis Result*";
     private String tagNextStep = "*Next Step*";
+    private Parser parser;
+    public static String DEFAULT = "default";
+
+    private HashMap<String, HashMap<String,String>> componentTriageMap = new HashMap<>();
+
+    public String getComments() {
+        return comments;
+    }
+
+    public String getHtmlFormatComments() {
+        return convertJiraFormatToHtml(comments);
+    }
+
+
+    private void addTriageRule(String processName, String keyWord, String component) {
+        HashMap<String, String> map = componentTriageMap.get(processName);
+        if (map == null) {
+            map = new HashMap<>();
+            map.put(keyWord, component);
+            componentTriageMap.put(processName, map);
+        } else {
+            map.put(keyWord, component);
+        }
+    }
+
+    private void initTriageMap() {
+        addTriageRule("com.android.launcher3",DEFAULT, "Core-AOSP launcher" );
+        addTriageRule("/system/bin/mm-qcamera-daemon",DEFAULT, "MME-Camera");
+        addTriageRule("com.android.phone", "MobileNetworkSettings", "Core-Settings");
+        addTriageRule("com.android.phone", DEFAULT, "Framework HAL-Telephony");
+        addTriageRule("system_server", DEFAULT, "Framework HAL-Runtime");
+        addTriageRule("com.google.android.gms.persistent", DEFAULT, "Google - GMS Framework");
+        addTriageRule("com.facebook.orca", DEFAULT, "3rd Party - MotoDev");
+        addTriageRule("com.motorola.cameraone", DEFAULT, "MME - Camera App");
+
+
+    }
+
+    public Triage(Parser p) {
+        parser = p;
+        initTriageMap();
+    }
 
 
 
+    //Return componet team
+    public String QueryAssignComponent(String processName, String keyWord) {
+
+        if (parser.isThirdPartyProcess(processName)) {
+            return "3rd Party - MotoDev";
+        }
+
+        HashMap<String, String> map = componentTriageMap.get(processName);
+        if (map != null) {
+            return map.get(keyWord);
+        }
+        return null;
+    }
 
     public void addReferenceLogName(String logName) {
         if (comments.contains(logName)) {
@@ -22,6 +80,16 @@ public class Triage {
         comments += tagLog +"\n";
         comments += logName +"\n";
     }
+
+    public static String highlight(String comment) {
+        return "*"+comment+"*";
+    }
+
+    public void addSimpleComment(String comment) {
+        comments += comment + "\n";
+    }
+
+
 
     public void addAnalysisResult(ArrayList<AnalysisComment> analysisComments) {
         if (!comments.contains(tagAnalysis)) {
@@ -36,13 +104,13 @@ public class Triage {
                 comments +=  "{noformat}\n" +analysisComment.referenceLog +   "{noformat}\n";
             }
             if (analysisComment.hideLog.length() != 0) {
-                comments += "<p class=\"hidelog\">" + analysisComment.hideLog +  "</p>\n";
+                comments += "<p class=\"hidelog\">" + analysisComment.hideLog +  "</p>";
             }
         }
     }
 
     public void addNextStep(String triageComment) {
-        comments += tagNextStep + "\n";
+        comments += "\n"+tagNextStep + "\n";
         comments += triageComment + "\n";
     }
 
@@ -97,6 +165,7 @@ public class Triage {
                     "      color: blue;\n" +
                     "      font-weight: bold;\n" +
                     "    }"+
+                    "    p { margin:0 }  "+
                     "    </style>\n" +
                     "    </head>\n" +
                     "<body>\n" +
@@ -178,7 +247,7 @@ public class Triage {
                 inList = false;
               //  commentArray[i] = "</ul>\n" + commentArray[i];
                // commentArray[i] = "<p class=\"title\">" + commentArray[i] +"</p>";
-                commentArray[i] = "<b>" + commentArray[i] +"</b><br>";
+                commentArray[i] = "</ul><b>" + commentArray[i] +"</b><br>";
             } else {
                 if (!inFormatblock && commentArray[i].indexOf('*') >= 0) {
                     boolean pair = false;

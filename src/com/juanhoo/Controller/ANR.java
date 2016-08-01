@@ -11,16 +11,11 @@ import java.util.regex.Pattern;
 /**
  * Created by JH on 2016/7/6.
  */
-public class ANR {
-    public int pid;
-    public int uid;
-    public String name;
-    public Date time;
-    public String reason;
-    public String logData;
-//03-11 06:00:08.806  2371  2427 I am_anr  : [0,24898,com.lifx.lifx,948485700,Broadcast of Intent { act=android.net.wifi.STATE_CHANGE flg=0x4000010 cmp=com.lifx.lifx/com.lifx.app.wear.WifiReceiver (has extras) }]
+public class ANR extends Issue{
 
-    public ANR(String line) {
+    public ANR(IssueType type, String line) {
+
+        issueType = type;
         String patternANR = "^(\\d{1,2})-(\\d{1,2})\\s+(\\d{1,2}):(\\d{1,2}):(\\d{1,2}).(\\d{1,3})\\s+(\\d{1,})\\s+(\\d{1,})\\s+\\w{1}\\s+am_anr\\s+:\\s+\\[(\\d{1,}),(\\d{1,}),(.+),(.*),(.*)\\]$";
 
         Matcher match = Pattern.compile(patternANR).matcher(line);
@@ -35,7 +30,7 @@ public class ANR {
             }
             pid = Integer.parseInt(match.group(10));
             uid = Integer.parseInt(match.group(9));
-            name = match.group(11);
+            pName = match.group(11);
             reason = match.group(13).replaceAll("\\{","\\\\{").replaceAll("\\}","\\\\}");  //Used to format
 
             logData = line;

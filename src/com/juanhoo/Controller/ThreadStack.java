@@ -110,7 +110,11 @@ public class ThreadStack {
                 //   System.out.println(matcher.group(1));
                 //  String patternsub = "(.*):(\\d+)";
                 //   Matcher subMatcher = Pattern.compile(patternsub).matcher(matcher.group(2));
-                return matcher.group(1);
+                String func = matcher.group(1);
+                if (func.lastIndexOf('.') != -1) {
+                    func = func.substring(func.lastIndexOf('.') + 1, func.length());
+                }
+                return func;
             }
 
         } else if (line.contains("native: ")) {
@@ -223,7 +227,7 @@ public class ThreadStack {
                 binderFunc = getFunctionName(preProcessedLine);
             }
         } else {
-            if (binderFunc.length() == 0 && preProcessedLine.contains("android.os.BinderProxy.transact")){
+            if (binderFunc.length() == 0 && preProcessedLine.contains("android.os.BinderProxy.transact(")){
                 binderFunc = getFunctionName(line);
             }
         }
@@ -260,5 +264,20 @@ public class ThreadStack {
     public int getLockedByThreadId() {
         return lockedByThreadId;
     }
+
+    private String timeConsumedKeyWords [] = {"download", "decode"};
+
+    public boolean isTimeCounsmedLoad() {
+        for (String funcName:stackFuncList) {
+            for (String keyword:timeConsumedKeyWords) {
+                if (funcName.toLowerCase().contains(keyword)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+
 
 }

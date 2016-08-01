@@ -12,17 +12,11 @@ import java.util.regex.Pattern;
 /**
  * Created by Yi He on 7/17/2016.
  */
-public class Watchdog {
-    public int pid;
-    public int uid;
+public class Watchdog extends Issue{
     ArrayList<String> blockedSysThreadNameList = new ArrayList<>();
-    public String name;
-    public Date time;
-    public String reason = "";
-    public String logData = "";
 
-
-    public Watchdog(String line){
+    public Watchdog(IssueType type, String line){
+        issueType = type;
         String pattern = "^(\\d{1,2})-(\\d{1,2})\\s+(\\d{1,2}):(\\d{1,2}):(\\d{1,2}).(\\d{1,3})\\s+(\\d{1,})\\s+(\\d{1,})\\s+\\w{1}\\s+Watchdog: \\*\\*\\* WATCHDOG KILLING SYSTEM PROCESS:(.*)$";
         Matcher match = Pattern.compile(pattern).matcher(line);
         if (match.find()) {
@@ -31,6 +25,7 @@ public class Watchdog {
             try {
                 time = format.parse(wathcdogTime);
                 pid = Integer.parseInt(match.group(7));
+                pName = "System_server";
             } catch (ParseException e) {
                 e.printStackTrace();
             }
@@ -47,7 +42,9 @@ public class Watchdog {
     }
 
     public void addLine(String line) {
-        logData = logData + line + "\n";
+        if (!line.isEmpty()) {
+            logData = logData + line + "\n";
+        }
     }
 
 

@@ -29,7 +29,7 @@ public final class Parser {
     private String logFolder;
     private Date startTime; //**RIL Daemon Started**
     private Date stopTime; //GsmSST  : NITZ: after Setting time of day
-    private static final int VALIDTIMERANGE = 10000;
+    private static final int VALIDTIMERANGE = 60000;
     public String buildFingerPrint = null;
     public HashMap<String, PackageInfo> packageInfoMap = new HashMap<>();
     public HashMap<Integer, MergeQueue> logByPidMap = new HashMap<>();
@@ -45,6 +45,7 @@ public final class Parser {
         public String hwVer =""; //
         public String swVer ="";
         public String model =""; //XT1563
+        public String board = "";
         public String swType =""; //"TYPE": "userdebug"
         public String issueSummary = ""; //"summary": "SYSTEM_TOMBSTONE",
         public String buildID = "";   //MPN24.59
@@ -88,18 +89,13 @@ public final class Parser {
 
     private ArrayList<CpuUsageSnapshot> cpuUsageSnapshots = new ArrayList<>();
     private String[] logFiles ;
-    ArrayList<ANR> anrList = new ArrayList<>();
-    ArrayList<Crash> crashList = new ArrayList<>();
+
     HashMap<Integer, CrashStack> crashStackMap = new HashMap<>();
-    ArrayList<Tombstone> tombstoneList = new ArrayList<>();
-    ArrayList<ModemPanic> modemPanicList = new ArrayList<>();
-    ArrayList<Watchdog> watchdogList = new ArrayList<>();
     public static String DATAPATH;
     HashMap<Integer, String> processIdNameMap = new HashMap<>();
     HashMap<Integer, Process> processIdStackMap = new HashMap<Integer, Process>();
-/*    public static Parser getInstance() {
-        return INSTANCE ;
-    }*/
+    PriorityQueue<Issue> issueQueue = new PriorityQueue<>();
+
     static HashMap<String, Process> sampleProcessMap = new HashMap<>();
     static HashMap<String, ThreadStack> runningBinderMap = new HashMap<>();
     private Triage trige;
@@ -112,56 +108,36 @@ public final class Parser {
         }
     }
 
-    public void addWatchdog(Watchdog watchdog) {
-        watchdogList.add(watchdog);
-    }
 
     public void addCPUUsageSnapshot(CpuUsageSnapshot cpuUsageSnapshot) {
         if (cpuUsageSnapshot != null) {
             cpuUsageSnapshots.add(cpuUsageSnapshot);
         }
     }
-    public void addTombstone(Tombstone tombstone) {
-        for (Tombstone existedTombstone:tombstoneList) {
-            if (tombstone.isDup(existedTombstone)) {
 
-                if (existedTombstone.buildFingerPrint.isEmpty()) {
-                    existedTombstone.buildFingerPrint = tombstone.buildFingerPrint;
-                }
-                if (existedTombstone.time == null) {
-                    existedTombstone.time = tombstone.time;
-                }
-                return;
-            }
-        }
-        issuePIDSet.add(tombstone.pid);
-        tombstoneList.add(tombstone);
-    }
-
-    public void addModemPanic(ModemPanic mp) {
-        modemPanicList.add(mp);
-    }
     public void setBuildFingerPrint(String data) {
         buildFingerPrint = data.replaceAll("\\\\","/");
     }
 
-    public void addANR(ANR anr) {
-        anrList.add(anr);
-        issuePIDSet.add(anr.pid);
-    }
+    public void addIssue(Issue issue) {
 
-    public void addNewCrash(Crash crash) {
-        int newCrashPos = crashList.size();
-        for (int i = 0; i < crashList.size(); i++) {
-            Crash existedCrash = crashList.get(i);
-            if (existedCrash.reason.compareTo(crash.reason) == 0) {
-                existedCrash.dupInd = newCrashPos;
+        for (Issue existedIssue:issueQueue) {
+            if (issue.isSameIssue(existedIssue)) {
+                if (!issue.buildFingerPrint.isEmpty() &&
+                        existedIssue.buildFingerPrint.isEmpty()) {
+                    existedIssue.buildFingerPrint = issue.buildFingerPrint;
+                }
+                return;
+            }
+            if (issue.isSameRootCauseIssue(existedIssue)) {
+                existedIssue.sameIssueTime = issue.time;
             }
         }
-        issuePIDSet.add(crash.pid);
-        crashList.add(crash);
+        issueQueue.add(issue);
+        if (issue.pid != -1) {
+            issuePIDSet.add(issue.pid);
+        }
     }
-
 
     public void addLog(int pid, long t, String line){
         MergeQueue logQueue = logByPidMap.get(pid);
@@ -180,16 +156,7 @@ public final class Parser {
         userInfo = info;
     }
 
-    private void clearHistory() {
-        anrList.clear();
-        crashList.clear();
-        tombstoneList.clear();
-        crashStackMap.clear();
-        processIdNameMap.clear();
-        processIdStackMap.clear();
-        runningBinderMap.clear();
-        cpuUsageSnapshots.clear();
-    }
+
 
     public void extractPID(String line) {
         String pattern = ".+am_proc_bound:\\s+\\[(\\d+),(\\d+),(.*?)\\]";
@@ -295,7 +262,7 @@ public final class Parser {
 
     //Analyze Bug2Go folder to intialize file log name
     private void generateLogFileMap() {
-        String prefixs[] = {"logcat.","aplogcat-"};
+        String prefixs[] = {"aplogcat-","logcat."};
         logFiles = new String[LOGEND];
 
         //Bugreport
@@ -358,8 +325,15 @@ public final class Parser {
         return stackList;
     }
 
+    public boolean isThirdPartyProcess(String processName) {
+        PackageInfo pkg = packageInfoMap.get(processName);
+        if (pkg == null) {
+            return false;
+        }
+        return pkg.isThirdPartyAPP();
+    }
+
     public void process() {
-        clearHistory();
 
         for (int i = LOGEND -1; i >= 0 ; i--) {
             if (logFiles[i] != null) {
@@ -371,44 +345,84 @@ public final class Parser {
 
             }
         }
-        trige = new Triage();
+        trige = new Triage(this);
+        trige.addReferenceLogName(logFolder);
 
-        int issueNum = anrList.size() + tombstoneList.size() +
-                crashList.size() +modemPanicList.size()
-                +watchdogList.size();
+        int issueNum = issueQueue.size();
         if (issueNum == 0) {
             Triage.AnalysisComment analysisComment = new Triage.AnalysisComment();
-            analysisComment.result ="*Not any tombstone/force close/anr/modem panic has been found in the log*.";
+            analysisComment.result = Triage.highlight("Not any tombstone/force close/anr/modem panic has been found in the log") + ", Please check the bug2go of the device.";
             if (!isValidLoginB2G()) {
-                analysisComment.result ="The bug2go doesn't have valid logs. Please check provide new bug2go! ";
+                analysisComment.result ="The bug2go doesn't have valid logs. Please check and provide new bug2go! ";
             }
             trige.addReferenceLogName(logFolder);
             ArrayList<Triage.AnalysisComment>  comments = new ArrayList<>();
             comments.add(analysisComment);
             trige.addAnalysisResult(comments);
+            trige.addNextStep("Move to product team to follow up with the user");
+            return;
+        }
+
+        int ind = 0;
+
+        Issue handleIssue = null;
+        Issue previousIssue = null;
+
+        while (!issueQueue.isEmpty()) {
+
+            handleIssue = issueQueue.poll();
+
+            if (previousIssue != null) {
+                if (handleIssue.time != null &&
+                        Math.abs(handleIssue.time.getTime() - previousIssue.time.getTime()) > 300000
+                        || handleIssue.time == null) {
+                    handleIssue = previousIssue;
+                    break; //Don't handle the handleIssue happened before 5 mins
+                }
+            }
+
+            previousIssue = handleIssue;
+            ind++;
+            if (handleIssue.issueType == Issue.IssueType.MODEMPANIC) {
+                analyzeModemPanic(handleIssue, ind);
+            }
+            if (handleIssue.issueType == Issue.IssueType.TOMBSTONE) {
+                analyzeTombstone(handleIssue, ind);
+            }
+            if (handleIssue.issueType == Issue.IssueType.ANR) {
+                analyzeAnr(handleIssue, ind);
+            }
+
+            if (handleIssue.issueType == Issue.IssueType.FORCECLOSE) {
+                analyzeCrash(handleIssue, ind);
+            }
+
+            if (handleIssue.issueType == Issue.IssueType.WATCHDOG) {
+                analyzeWatchdog(handleIssue, ind);
+            }
+
         }
 
 
-        if (anrList.size() != 0) {
-            analyzeAnr();
-        }
+        if (handleIssue != null) {
+            if (ind > 1) {
+                //At least two issues in the log
+                String comment = "*All above issues maybe are related to "
+                        + handleIssue.pName + " " +handleIssue.issueType.toString() +"*...";
+                trige.addSimpleComment(comment);
 
-        if (tombstoneList.size() != 0) {
-            analyzeTombstone();
+            }
+            String component;
+            if (handleIssue.issueType != Issue.IssueType.MODEMPANIC) {
+                String processName = (handleIssue.dependenPName == null) ? handleIssue.pName : handleIssue.dependenPName;
+                component = trige.QueryAssignComponent(processName, handleIssue.keyWord);
+            } else {
+                String modemChip = deviceInfo.board.replace("msm", "Modem");
+                component = modemChip + "-Panics";
+            }
+            String triageSolution = "Please "+ Triage.highlight(component) + " team have a further check.";
+            trige.addNextStep(triageSolution);
         }
-
-        if (crashList.size() != 0) {
-            analyzeCrash();
-        }
-
-        if (modemPanicList.size()!=0) {
-            analyzeModemPanic();
-        }
-
-        if (watchdogList.size() != 0) {
-            analyzeWatchdog();
-        }
-
 
         trige.generateOutput(logFolder+File.separator+ outputFileName);
 
@@ -452,7 +466,6 @@ public final class Parser {
                 entry = zis.getNextEntry();
 
             }
-            System.out.println();
 
         } catch (FileNotFoundException e) {
             e.printStackTrace();
@@ -464,140 +477,151 @@ public final class Parser {
         return true;
     }
 
-    private void analyzeWatchdog() {
+    private void analyzeWatchdog(Issue issue, int ind) {
         ArrayList<Triage.AnalysisComment>  analysisComments = new ArrayList<>();
-        trige.addReferenceLogName(logFolder);
+
         Triage.AnalysisComment analysisComment = new Triage.AnalysisComment();
-        analysisComment.result = "\nIn the log, total *"+watchdogList.size() + " watchdog reset*\n";
+        analysisComment.result += "* Issue "+ ind +": "+ issue.issueType.toString();
+        analysisComment.result += "\nSystem server watchdog" + "*"+" (PID:"+issue.pid+") happened at " + issue.time;
         analysisComments.add(analysisComment);
 
-        for (int i = 0; i < watchdogList.size(); i++) {
-            Watchdog watchdog = watchdogList.get(i);
-            analysisComment = new Triage.AnalysisComment();
-            analysisComment.result += "* *System_server Watchdog "+ (i+1) +"\n";
-            analysisComment.result += "Happened at "+ watchdog.time + "\n";
-            analysisComment.result += "Reason: "+ watchdog.reason;
-            analysisComment.referenceLog += watchdog.logData;
-            analysisComments.add(analysisComment);
 
-            for (int blockedThreadId = 0 ; blockedThreadId <  watchdog.blockedSysThreadNameList.size(); blockedThreadId++) {
-                ArrayList<Triage.AnalysisComment> anrstackComments = getANRstackAnalysis(watchdog.pid, watchdog.blockedSysThreadNameList.get(blockedThreadId));
-                for (Triage.AnalysisComment comment:anrstackComments) {
-                    analysisComments.add(comment);
-                }
+        Watchdog watchdog = (Watchdog)issue;
+        analysisComment = new Triage.AnalysisComment();
+        analysisComment.result += "Reason: "+ watchdog.reason;
+        analysisComment.referenceLog += watchdog.logData;
+        analysisComments.add(analysisComment);
+
+        for (int blockedThreadId = 0 ; blockedThreadId <  watchdog.blockedSysThreadNameList.size(); blockedThreadId++) {
+            ArrayList<Triage.AnalysisComment> anrstackComments = getANRstackAnalysis(watchdog, watchdog.blockedSysThreadNameList.get(blockedThreadId));
+            for (Triage.AnalysisComment comment:anrstackComments) {
+                analysisComments.add(comment);
             }
         }
+
         trige.addAnalysisResult(analysisComments);
     }
 
 
 
-    private void analyzeCrash() {
+
+
+    private void analyzeCrash(Issue issue, int ind) {
         ArrayList<Triage.AnalysisComment>  analysisComments = new ArrayList<>();
-        trige.addReferenceLogName(logFolder);
-        Triage.AnalysisComment analysisComment = new Triage.AnalysisComment();
-        analysisComment.result = "\nIn the log, total *"+crashList.size() + " force close*";
-        analysisComments.add(analysisComment);
 
-        for (int i = 0; i < crashList.size(); i++) {
-            Crash crash = crashList.get(i);
-            CrashStack crashStack = crashStackMap.get(crash.pid);
-            String pkgVersion = null;
-            PackageInfo pkg = packageInfoMap.get(crash.name);
-            if (pkg != null) {
-                pkgVersion = pkg.getKey(PackageInfo.VERSION);
-            }
-            analysisComment = new Triage.AnalysisComment();
-            analysisComment.result += "* *Force close "+ (i+1) +"\n";
-            analysisComment.result += "Force close in process *"+ crash.name + "*"+" (PID:"+crash.pid+") at " + crash.time;
-            if (pkgVersion != null) {
-                analysisComment.result += "  (Package Version : *"+ pkgVersion+"*) ";
-            }
+        Triage.AnalysisComment analysisComment ;
 
-            analysisComment.result += "\n*Reason*: "+crash.reason;
-            if (crash.dupInd != -1) {
-                analysisComment.result += "\nThe crash is same with crash"+ (crash.dupInd + 1);
-            }
-            analysisComment.result += "\n*Reference logs are below*:";
-            analysisComment.referenceLog +=  crash.logData +"\n\n";
-            if (crashStack != null && crash.dupInd == -1) {
-                analysisComment.referenceLog +=  crashStack.logData ;
-            }
-            analysisComments.add(analysisComment);
-            //Reference log
-            long crashTime = crash.time.getTime();
-            String log = getLogByPid(crash.pid, crashTime - 300000, crashTime);
-            if (log.length() > 0) {
-                analysisComment = new Triage.AnalysisComment();
-                analysisComment.hideLog = "The process log started from 5 mins ago:\n" + log ;
-                analysisComments.add(analysisComment);
-            }
-
+        String pkgVersion = null;
+        PackageInfo pkg = packageInfoMap.get(issue.pName);
+        if (pkg != null) {
+            pkgVersion = pkg.getKey(PackageInfo.VERSION);
         }
-        trige.addAnalysisResult(analysisComments);
-        return ;
-    }
-
-    private void analyzeModemPanic() {
-        ArrayList<Triage.AnalysisComment>  analysisComments = new ArrayList<>();
-        trige.addReferenceLogName(logFolder);
-        Triage.AnalysisComment analysisComment = new Triage.AnalysisComment();
-        analysisComment.result = "\nIn the log, total *"+modemPanicList.size() + " modem panic*";
-        analysisComments.add(analysisComment);
-
-        for (int i = 0; i < modemPanicList.size(); i++) {
-            ModemPanic modemPanic = modemPanicList.get(i);
-            analysisComment = new Triage.AnalysisComment();
-            analysisComment.result += "* Modem panic "+ (i+1) +"\n";
-            analysisComment.result += "Modem panic happened at " + modemPanic.time +"\n";
-            analysisComment.result += "*Reason*: "+modemPanic.reason;
-
-            if (modemPanic.logData.length() != 0) {
-                analysisComment.result += "*Reference logs are below*:\n";
-                analysisComment.referenceLog += modemPanic.logData + "\n";
+        analysisComment = new Triage.AnalysisComment();
+        analysisComment.result += "* Issue "+ ind +": "+ issue.issueType.toString();
+        analysisComment.result += "\nForce close in process *"+ issue.pName + "*"+" (PID:"+issue.pid+") at " + issue.time;
+        if (pkgVersion != null) {
+            analysisComment.result += "  (Package Version : *"+ pkgVersion+"*) ";
+            if (pkg.isThirdPartyAPP()) {
+                analysisComment.result += "  Third-party application ";
+            } else {
+                analysisComment.result += "  Pre-install ";
             }
+
+            if (pkg.isUpdated()) {
+                analysisComment.result += "  Got updated ";
+            }
+        }
+
+        analysisComment.result += "\n*Reason*: "+issue.reason;
+        if (issue.sameIssueTime != null) {
+            analysisComment.result += "\nThe crash is same with crash happend at"+ issue.sameIssueTime.toString();
+        }
+        analysisComment.result += "\n*Reference logs are below*:";
+        analysisComment.referenceLog +=  issue.logData +"\n";
+        CrashStack crashStack = crashStackMap.get(issue.pid);
+        if (crashStack != null && issue.sameIssueTime == null) {
+            analysisComment.referenceLog +=  crashStack.logData ;
+            issue.keyWord = crashStack.keyWord;
+        }
+        analysisComments.add(analysisComment);
+        //Reference log
+        long crashTime = issue.time.getTime();
+        String log = getLogByPid(issue.pid, crashTime - 300000, crashTime);
+        if (log.length() > 0) {
+            analysisComment = new Triage.AnalysisComment();
+            analysisComment.hideLog = "The process log started from 5 mins ago:\n" + log ;
             analysisComments.add(analysisComment);
         }
+
+
         trige.addAnalysisResult(analysisComments);
         return ;
     }
 
+    private void analyzeModemPanic(Issue issue, int i) {
+        ArrayList<Triage.AnalysisComment>  analysisComments = new ArrayList<>();
+        Triage.AnalysisComment analysisComment = new Triage.AnalysisComment();
+        analysisComment.result = "\nIssue *" +i + ": " + issue.issueType.toString() +"*";
+        analysisComments.add(analysisComment);
 
+        analysisComment = new Triage.AnalysisComment();
+        analysisComment.result += issue.issueType.toString() + " happened at " + issue.time +"\n";
+        analysisComment.result += "*Reason*: "+issue.reason;
 
+        if (issue.logData.length() != 0) {
+            analysisComment.result += "*Reference logs are below*:\n";
+            analysisComment.referenceLog += issue.logData + "\n";
+        }
+        analysisComments.add(analysisComment);
 
-    private ArrayList<Triage.AnalysisComment> getANRstackAnalysis(int pid, String tName) {
+        trige.addAnalysisResult(analysisComments);
+        return ;
+    }
 
-        Process ps = processIdStackMap.get(pid);
+    private ArrayList<Triage.AnalysisComment> getANRstackAnalysis(Issue issue,  String tName) {
+
+        Process ps = processIdStackMap.get(issue.pid);
         if (ps == null) {
             return new ArrayList<>();
         }
         int tid = ps.getThreadByName(tName).get(0).tid;
 
-        return getANRstackAnalysis(pid, tid);
+        return analyzeANRTrace(issue, tid);
     }
 
-    private ArrayList<Triage.AnalysisComment> getANRstackAnalysis(int pid, int tid) {
+    private ArrayList<Triage.AnalysisComment> analyzeANRTrace(Issue issue, int tid) {
         ArrayList<Triage.AnalysisComment> comments = new ArrayList<>();
         Triage.AnalysisComment analysisComment = new Triage.AnalysisComment();
-        Process ps = processIdStackMap.get(pid);
+        Process ps = processIdStackMap.get(issue.pid);
         if (ps == null) {
             analysisComment.result = "*ANR Trace* No corresponding ANR trace file";
             comments.add(analysisComment);
         } else {
             if (!ps.hasDeadLock()) {
-                comments = ps.getStackInfo(ps.getThreadByID(tid));
+                ThreadStack ts = ps.getThreadByID(tid);
+                comments = ps.getStackInfo(ts);
                 String binderFunc = ps.getBlockedFunc(ps.getThreadByID(tid));
-                if (binderFunc != null) {
+                if (binderFunc != null && !binderFunc.isEmpty()) {
                     System.out.println("Check binder function:" + binderFunc);
-                }
-                ThreadStack binderTS = runningBinderMap.get(binderFunc);
-                if (binderTS != null) {
+                    ThreadStack binderTS = runningBinderMap.get(binderFunc);
+                    if (binderTS != null && binderTS.parent.pid != issue.pid) {
+                        analysisComment = new Triage.AnalysisComment();
+                        analysisComment.result = "It maybe waiting on transaction running in process " + trige.highlight(binderTS.parent.name)
+                                + " (thread "+ binderTS.tid + ")";
+                        analysisComment.referenceLog = binderTS.toString();
+                        issue.dependenPName = binderTS.parent.name;
+                        //issue.keyWord = "";
+                        comments.add(analysisComment);
+                    }
+                } else if (ts.isTimeCounsmedLoad()) {
                     analysisComment = new Triage.AnalysisComment();
-                    analysisComment.result = "It maybe waiting on transaction running in process " + binderTS.parent.name
-                            + "thread "+ binderTS.tid;
-                    analysisComment.referenceLog = binderTS.toString();
+                    analysisComment.result = "Looks like the thread has *time-consumed* work.";
                     comments.add(analysisComment);
+
                 }
+                //
+
+
             } else {
                 comments = ps.getDeadLockDetail();
                 return comments;
@@ -627,91 +651,91 @@ public final class Parser {
 
     private static int MAINTHREADID = 1;
 
-    private String analyzeAnr() {
+    private String analyzeAnr(Issue issue, int ind) {
         String res = "";
         ArrayList<Triage.AnalysisComment>  analysisComments = new ArrayList<>();
         trige.addReferenceLogName(logFolder);
         Triage.AnalysisComment analysisComment = new Triage.AnalysisComment();
-        analysisComment.result = "\nIn the log, total *"+anrList.size() + "* ANRs\n";
-        analysisComments.add(analysisComment);
-        for (int i = 0; i < anrList.size(); i++) {
-            ANR anr = anrList.get(i);
-            analysisComment = new Triage.AnalysisComment();
-            analysisComment.result += "* ANR "+ (i+1) +"\n";
-            String pkgVersion = null;
-            PackageInfo pkg = getPackage(anr.name);
-            if (pkg != null) {
-                pkgVersion = pkg.getKey(PackageInfo.VERSION);
-            }
-            analysisComment.result += "Process *"+ anr.name + "*"+"(PID:"+anr.pid+") happened at " + anr.time ;
-            if (pkgVersion != null) {
-                analysisComment.result += " (Package Version: *"+pkgVersion+ "* )";
-            }
-            analysisComment.result += "\nReason: " + anr.reason;
-            analysisComment.referenceLog += anr.logData;
-            analysisComments.add(analysisComment);
-            //Analyze anr
-            ArrayList<Triage.AnalysisComment> anrstackComments = getANRstackAnalysis(anr.pid, MAINTHREADID);
-            for (Triage.AnalysisComment comment:anrstackComments) {
-                analysisComments.add(comment);
-            }
-            ArrayList<CpuUsageSnapshot.CpuUsage> cpuUsages = getCpuUsagesByLoad(anr.time, 30);
-            for (CpuUsageSnapshot.CpuUsage cpuUsageSnapshot:cpuUsages) {
-                analysisComment = new Triage.AnalysisComment();
-                analysisComment.result = " *Top CPU usage application: *"+ cpuUsageSnapshot.processName +"* (PID:"+
-                        cpuUsageSnapshot.pid+") CPU usage:"+cpuUsageSnapshot.percentage;
-                analysisComments.add(analysisComment);
+        analysisComment.result = "* Issue " +ind  + ":" + issue.issueType.toString();
+        String pkgVersion = null;
+        PackageInfo pkg = getPackage(issue.pName);
+        if (pkg != null) {
+            pkgVersion = pkg.getKey(PackageInfo.VERSION);
+        }
+        analysisComment.result += "\nProcess *"+ issue.pName + "*"+"(PID:"+issue.pid+") happened at " + issue.time ;
+        if (pkgVersion != null) {
+            analysisComment.result += "  (Package Version : *"+ pkgVersion+"*) ";
+            if (pkg.isThirdPartyAPP()) {
+                analysisComment.result += "  Third-party application ";
+            } else {
+                analysisComment.result += "  Pre-install ";
             }
 
-            long anrTime = anr.time.getTime();
-            String log = getLogByPid(anr.pid, anrTime - 300000, anrTime);
-            if (log.length() > 0) {
-                analysisComment = new Triage.AnalysisComment();
-                analysisComment.hideLog = "The process log started from 5 mins ago:\n" + log ;
-                analysisComments.add(analysisComment);
+            if (pkg.isUpdated()) {
+                analysisComment.result += "  Got updated ";
             }
         }
+        analysisComment.result += "\nReason: " + issue.reason;
+        analysisComment.referenceLog += issue.logData;
+        analysisComments.add(analysisComment);
+        //Analyze anr
+        ArrayList<Triage.AnalysisComment> anrstackComments = analyzeANRTrace(issue, MAINTHREADID);
+        for (Triage.AnalysisComment comment:anrstackComments) {
+            analysisComments.add(comment);
+        }
+        ArrayList<CpuUsageSnapshot.CpuUsage> cpuUsages = getCpuUsagesByLoad(issue.time, 30);
+        for (CpuUsageSnapshot.CpuUsage cpuUsageSnapshot:cpuUsages) {
+            analysisComment = new Triage.AnalysisComment();
+            analysisComment.result = " *Top CPU usage application: *"+ cpuUsageSnapshot.processName +"* (PID:"+
+                    cpuUsageSnapshot.pid+") CPU usage:"+cpuUsageSnapshot.percentage;
+            analysisComments.add(analysisComment);
+        }
+
+        long anrTime = issue.time.getTime();
+        String log = getLogByPid(issue.pid, anrTime - 300000, anrTime);
+        if (log.length() > 0) {
+            analysisComment = new Triage.AnalysisComment();
+            analysisComment.hideLog = "The process log started from 5 mins ago:\n" + log ;
+            analysisComments.add(analysisComment);
+        }
+
         trige.addAnalysisResult(analysisComments);
 
         return res;
     }
 
-    private void analyzeTombstone() {
+    private void analyzeTombstone(Issue issue, int ind) {
         ArrayList<Triage.AnalysisComment>  analysisComments = new ArrayList<>();
         trige.addReferenceLogName(logFolder);
         Triage.AnalysisComment analysisComment = new Triage.AnalysisComment();
-        analysisComment.result = "\nIn the log, total *"+tombstoneList.size() + "* tombstones";
-        analysisComments.add(analysisComment);
-        for (int i = 0; i < tombstoneList.size(); i++) {
-            Tombstone ts = tombstoneList.get(i);
-            analysisComment = new Triage.AnalysisComment();
-            analysisComment.result += "* Tombstone "+ (i+1) +"\n";
-            if (ts.buildFingerPrint.compareTo(buildFingerPrint) == 0) {
-                analysisComment.result += "Tombstone in process *"+ ts.pName + "*"+"(PID:"+ts.pid+") Thread name: "+ts.tName+ "(TID:" +ts.tid+" ) at " + ts.time;
-                analysisComment.result += "\nReason: "+ts.reason;
-                analysisComment.referenceLog += ts.logData;
-                analysisComments.add(analysisComment);
-                if (ts.time == null) {
-                    continue;
-                }
-                long tombstonetime = ts.time.getTime();
-                String log = getLogByPid(ts.pid, tombstonetime - 300000, tombstonetime);
-                if (log.length() > 0) {
-                    analysisComment = new Triage.AnalysisComment();
-                    analysisComment.hideLog = "The process log started from 5 mins ago:\n" + log ;
-                    analysisComments.add(analysisComment);
-                }
-
-            } else {
-
-                analysisComment.result += "One tombstone happened in different version.\n The tombstone happened at sw version: "+ ts.buildFingerPrint +"\n";
-                analysisComment.result += "Current software version is: "+ buildFingerPrint +"\n";
-                analysisComment.result += "Tombstone in process *"+ ts.pName + "*"+"(PID:"+ts.pid+") Thread name: "+ts.tName+ "(TID:" +ts.tid+" )";
-                analysisComment.result += "\nReason: "+ts.reason;
-                analysisComment.referenceLog += ts.logData ;
+        analysisComment.result += "* Issue "+ ind +": "+issue.issueType.toString();
+        if (issue.buildFingerPrint.compareTo(buildFingerPrint) == 0) {
+            analysisComment.result += "\nTombstone in process *"+ issue.pName + "*"+"(PID:"+issue.pid+") Thread name: "+issue.tName+ "(TID:" +issue.tid+" ) at " + issue.time;
+            analysisComment.result += "\nReason: "+issue.reason;
+            analysisComment.referenceLog += issue.logData;
+            analysisComments.add(analysisComment);
+            if (issue.time == null) {
+                trige.addAnalysisResult(analysisComments);
+                return;
+            }
+            long tombstonetime = issue.time.getTime();
+            String log = getLogByPid(issue.pid, tombstonetime - 300000, tombstonetime);
+            if (log.length() > 0) {
+                analysisComment = new Triage.AnalysisComment();
+                analysisComment.hideLog = "The process log started from 5 mins ago:\n" + log ;
                 analysisComments.add(analysisComment);
             }
+
+        } else {
+
+            analysisComment.result += "One tombstone happened in different version.\n The tombstone happened at sw version: "+ issue.buildFingerPrint +"\n";
+            analysisComment.result += "Current software version is: "+ buildFingerPrint +"\n";
+            analysisComment.result += "Tombstone in process *"+ issue.pName + "*"+"(PID:"+issue.pid+") Thread name: "+issue.tName+ "(TID:" +issue.tid+" )";
+            analysisComment.result += "\nReason: "+issue.reason;
+            analysisComment.referenceLog += issue.logData ;
+            analysisComments.add(analysisComment);
         }
+
         trige.addAnalysisResult(analysisComments);
     }
 
@@ -750,42 +774,7 @@ public final class Parser {
         System.out.println("-----------------End------------------------------------------------");
     }
 
-    private void printAnalyzeResult() {
 
-        System.out.println("In the bug2go total "+crashList.size() + " force close! ");
-
-        System.out.println("In the bug2go total "+anrList.size() + " ANR!");
-        for (ANR anr:anrList) {
-            System.out.println(anr.name);
-        }
-
-
-        System.out.println("In the bug2go total "+crashStackMap.size()+" stack in thez force close!");
-        for (Integer pid:crashStackMap.keySet()) {
-            CrashStack cs = crashStackMap.get(pid);
-            System.out.println("Crash process "+ pid + " start -----------------------------");
-            System.out.println(cs);
-            System.out.println("Crash " + " end -----------------------------");
-        }
-
-        System.out.println("In the bug2go total "+tombstoneList.size()+" tombstone!");
-
-        for (int i =0; i<tombstoneList.size(); i++) {
-            Tombstone ts = tombstoneList.get(i);
-            System.out.println("Process ID:"+ts.pid + " Process name: "+ ts.pName);
-            System.out.println("Tombstone "+i+ " start -----------------------------");
-            System.out.println(ts);
-            System.out.println("Tombstone "+i+ " end -----------------------------");
-        }
-
-       /* for (ANR anr:anrList) {
-            System.out.println(anr.logData);
-            String res = analyzeAnr(anr.pid);
-            if (!res.isEmpty()) {
-                System.out.println(res);
-            }
-        }*/
-    }
 
     private void printUserInfo() {
         if (userInfo == null) {
@@ -803,16 +792,6 @@ public final class Parser {
         System.out.println("Device Model :"+deviceInfo.model + " Build ID:" +deviceInfo.buildID +"\nbuildfingerprint: "+ buildFingerPrint);
     }
 
-    private void printBlockedMainThreadStack() {
-        for (Integer pid:processIdStackMap.keySet()) {
-            Process ps = processIdStackMap.get(pid);
-            if (ps.isMainThreadBlocked()) {
-                System.out.println("Process name " + processIdNameMap.get(ps.pid));
-                ThreadStack ts = ps.getMainThread();
-                System.out.println(ts);
-            }
-        }
-    }
 
     private void printRunningBinderThreadStack() {
         for (Integer pid:processIdStackMap.keySet()) {
@@ -827,36 +806,14 @@ public final class Parser {
         }
     }
 
+    public String getJiraComments() {
+        return trige.getComments();
 
-
-
-    private void printTopCPUusage() {
-        for (ANR anr:anrList) {
-            ArrayList<CpuUsageSnapshot.CpuUsage> cpuUsages = getCpuUsagesByLoad(anr.time, 5);
-            System.out.println("High CPU up 5% ---------");
-            for (CpuUsageSnapshot.CpuUsage cpuUsage:cpuUsages) {
-                System.out.println("Pid = "+ cpuUsage.pid +" name: "+cpuUsage.processName + " offload:"+cpuUsage.percentage+"%");
-               ThreadStack ts= getMainThreadByPid(anr.time, cpuUsage.pid);
-                if (ts != null) {
-                    System.out.println(ts);
-                }
-            }
-        }
     }
 
-
-    public void debugOutput() {
-        System.out.println("\n================================="+logFolder+" Start =======================================\n");
-        debugFilesInBug2Go();
-        System.out.println("\n---------------------------------Analysis Result----------------------------------------------");
-        printAnalyzeResult();
-      //  printPIDHistory();
-      //  printBlockedMainThreadStack();
-        printRunningBinderThreadStack();
-       // printTopCPUusage();
-        printUserInfo();
-        printDeviceInfo();
-        System.out.println("\n================================="+logFolder+" End =======================================\n");
+    public String getHtmlComments() {
+        return trige.getHtmlFormatComments();
     }
+
 
 }

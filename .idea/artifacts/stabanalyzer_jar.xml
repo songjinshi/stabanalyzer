@@ -1,6 +1,6 @@
 <component name="ArtifactManager">
   <artifact type="jar" name="stabanalyzer:jar">
-    <output-path>C:/12.Jar</output-path>
+    <output-path>C:/12.Jar/test</output-path>
     <root id="archive" name="stabanalyzer.jar">
       <element id="module-output" name="stabanalyzer" />
     </root>

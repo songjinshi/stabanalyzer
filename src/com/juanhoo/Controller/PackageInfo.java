@@ -1,9 +1,9 @@
 package com.juanhoo.Controller;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedList;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -17,7 +17,11 @@ public class PackageInfo {
     }
     HashMap<String, String> packageDetailMap = new HashMap<>();
     public final static String VERSION =  "versionName";
-    LinkedList<String> keys = new LinkedList<>(Arrays.asList("userId", "codePath", VERSION, "flags", "firstInstallTime", "lastUpdateTime", "installerPackageName"));
+    public final static String FIRSTINSTALLTIME = "firstInstallTime";
+    public final static String LASTUPDATETIME = "lastUpdateTime";
+    LinkedList<String> keys = new LinkedList<>(Arrays.asList("userId", "codePath", VERSION, "flags", FIRSTINSTALLTIME, LASTUPDATETIME, "installerPackageName"));
+    public boolean isThirdPatyApp = false;
+    public boolean isUpdated = false;
 
 
     @Override
@@ -45,5 +49,33 @@ public class PackageInfo {
                 packageDetailMap.put(key, match.group(1));
             }
         }
+    }
+
+    public boolean isThirdPartyAPP() {
+        String firstInstallTime = packageDetailMap.get(FIRSTINSTALLTIME);
+
+        DateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH);
+        try {
+            Date installDate = format.parse(firstInstallTime);
+            Calendar cal = Calendar.getInstance();
+            cal.setTime(installDate);
+            int installYear = cal.get(Calendar.YEAR);
+            if (installYear < 2015) {
+                return false;
+            }
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
+        return true;
+    }
+
+    public boolean isUpdated() {
+        String firstInstallTime = packageDetailMap.get(FIRSTINSTALLTIME);
+        String lastUpdateTime = packageDetailMap.get(LASTUPDATETIME);
+
+        if (firstInstallTime.compareTo(lastUpdateTime) !=0 ) {
+            return true;
+        }
+        return false;
     }
 }

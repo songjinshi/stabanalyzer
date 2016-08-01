@@ -1,5 +1,6 @@
 package com.juanhoo.file;
 
+import com.juanhoo.Controller.Issue;
 import com.juanhoo.Controller.ModemPanic;
 import com.juanhoo.Controller.Parser;
 
@@ -30,15 +31,13 @@ public class MainFileHandler extends FileHandler{
             while ((line = br.readLine()) != null) {
                 showProgress();
                 if (line.contains(SSRENTRY)) {
-                    modemPanic = new ModemPanic();
+                    modemPanic = new ModemPanic(Issue.IssueType.MODEMPANIC, line);
                     continue;
                 }
 
-
-
                 if (line.contains(SSREXIT)) {
                     if (modemPanic != null) {
-                        parser.addModemPanic(modemPanic);
+                        parser.addIssue(modemPanic);
                         modemPanic = null;
                         continue;
                     }

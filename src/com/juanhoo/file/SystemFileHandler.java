@@ -1,6 +1,7 @@
 package com.juanhoo.file;
 
 import com.juanhoo.Controller.CpuUsageSnapshot;
+import com.juanhoo.Controller.Issue;
 import com.juanhoo.Controller.Parser;
 import com.juanhoo.Controller.Watchdog;
 
@@ -66,14 +67,14 @@ public class SystemFileHandler extends FileHandler{
                 }
 
                 if (line.matches(".*Watchdog: \\*\\*\\* WATCHDOG KILLING SYSTEM PROCESS:.*")) { //Caught watchdog
-                    watchdog = new Watchdog(line);
+                    watchdog = new Watchdog(Issue.IssueType.WATCHDOG, line);
                 }
 
                 if (watchdog != null) {
                     if (line.matches(".*Watchdog:.*")){
                         watchdog.addLine(line);
                     } else {
-                        parser.addWatchdog(watchdog);
+                        parser.addIssue(watchdog);
                         watchdog = null;
                     }
                 }
